@@ -472,5 +472,94 @@ val: images  # 如果无验证集，使用训练集
 names: 
   0: tv  # 必须与标签中的class_id对应
 obb_format: xyxyxyxy  # 显式声明OBB格式
+================================================================================================
 
+在 Ultralytics YOLOv8 中，训练行为的连续性取决于您使用的具体命令和文件路径。以下是关键分析：
 
+1. 默认行为：重新开始训练
+当您运行：
+
+bash
+yolo detect obb train data=tv_obb.yaml model=yolov8s-obb.pt epochs=50
+会重新开始训练，原因如下：
+
+您指定了基础模型 yolov8s-obb.pt（官方预训练权重）
+
+未通过 resume 参数显式指定继续训练
+
+新训练会创建新的输出目录（如 runs/obb/train4）
+
+2. 两种继续训练的方法
+(1) 从上次的权重继续
+使用上次训练得到的 last.pt 作为初始权重：
+
+bash
+yolo detect obb train \
+  data=tv_obb.yaml \
+  model=runs/obb/train3/weights/last.pt \  # 关键：指定上次的最终权重
+  epochs=50 \
+  resume=True  # 显式声明继续训练
+效果：
+
+从上次停止的epoch继续（如上次完成50/50，则从第51开始）
+
+保持所有超参数和优化器状态
+
+(2) 从最佳权重微调
+使用 best.pt 作为基础模型（重新初始化部分参数）：
+
+bash
+yolo detect obb train \
+  data=tv_obb.yaml \
+  model=runs/obb/train3/weights/best.pt \  # 使用最佳权重
+  epochs=50  # 不添加resume参数
+效果：
+
+从最佳权重初始化，但作为新训练开始（从epoch 1/50重新计数）
+
+不保留优化器状态（相当于迁移学习）
+
+3. 行为对比表
+命令类型	初始权重	优化器状态	Epoch计数	输出目录
+新训练	yolov8s-obb.pt	新初始化	1/50	train4
+resume=True	last.pt	保留	51/100	延续原目录
+从best.pt开始（无resume）	best.pt	新初始化	1/50	train4（新建）
+4. 如何确认训练连续性
+检查日志开头：
+
+新训练会显示：
+
+text
+Starting training for 50 epochs...
+继续训练会显示：
+
+text
+Resuming training from runs/obb/train3/weights/last.pt...
+Epoch ranges: 51-100 (50 epochs)
+5. 建议操作
+(1) 推荐继续训练方式
+bash
+yolo detect obb train \
+  model=runs/obb/train3/weights/last.pt \
+  data=tv_obb.yaml \
+  epochs=100 \  # 总epoch=原50+新增50
+  resume=True \
+  project=runs/obb \  # 指定相同项目目录
+  name=train3  # 沿用原名（会续写日志）
+(2) 注意事项
+学习率调整：继续训练时建议适当降低学习率
+
+yaml
+# 在tv_obb.yaml中添加
+lr0: 0.001  # 初始学习率减半
+早停监控：如果上次已收敛，可减少epoch数
+
+版本兼容：确保ultralytics版本一致（避免权重不兼容）
+
+6. 验证是否成功继续
+检查以下文件是否被加载：
+
+text
+Loading weights from runs/obb/train3/weights/last.pt...
+Optimizer state restored from runs/obb/train3/weights/last.pt
+如果仍有疑问，可以提供您实际运行的日志开头部分，我可以帮您确认具体行为。
